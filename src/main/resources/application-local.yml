@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orderdb
+    username: orderuser
+    password: orderpass
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: HikariPool-local
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 20000       # 20s
+      idle-timeout: 300000            # 5min
+      max-lifetime: 1200000           # 20min
+      keepalive-time: 60000           # 1min
+      leak-detection-threshold: 60000 # 1min — utile in dev
+
+  jpa:
+    hibernate:
+      ddl-auto: validate              # Flyway gestisce lo schema
+    properties:
+      hibernate:
+        format_sql: true
+        generate_statistics: true
+
+  flyway:
+    baseline-on-migrate: true         # per DB locali già esistenti
+
+logging:
+  level:
+    com.example.orderservice: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+
+management:
+  endpoint:
+    health:
+      show-details: always

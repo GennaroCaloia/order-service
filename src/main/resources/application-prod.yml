@@ -1,0 +1,39 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      pool-name: HikariPool-prod
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      keepalive-time: 60000
+      # Prod: no leak detection — overhead non necessario
+      leak-detection-threshold: 0
+      # Validazione connessione prima dell'uso
+      connection-test-query: SELECT 1
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        generate_statistics: false
+
+  flyway:
+    out-of-order: false
+    validate-on-migrate: true
+
+logging:
+  level:
+    root: WARN
+    com.example.orderservice: INFO
+    org.hibernate.SQL: OFF
+
+management:
+  endpoint:
+    health:
+      show-details: when-authorized

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Importa le configurazioni di default di Spring Boot -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- ───────────── PROFILO: local / dev ───────────── -->
+    <springProfile name="local,dev">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- ───────────── PROFILO: prod ───────────── -->
+    <springProfile name="prod">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!-- Campi fissi aggiunti a ogni riga di log -->
+                <customFields>{"service":"order-service","env":"prod"}</customFields>
+
+                <!-- Include MDC automaticamente (traceId, spanId, customerId) -->
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>spanId</includeMdcKeyName>
+                <includeMdcKeyName>customerId</includeMdcKeyName>
+
+                <!-- Esclude campi ridondanti -->
+                <excludeFields>tags</excludeFields>
+
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <message>message</message>
+                    <logger>logger</logger>
+                    <thread>thread</thread>
+                    <level>level</level>
+                    <stackTrace>stack_trace</stackTrace>
+                </fieldNames>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>
