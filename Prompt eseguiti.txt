@@ -1,0 +1,118 @@
+FASE 1 — Scaffolding & Architettura
+
+Prompt 1 — Struttura del progetto
+Crea la struttura di un microservizio Spring Boot 3.x chiamato "order-service"
+con le seguenti caratteristiche:
+- Java 21, Maven
+- Architettura a layer: controller / service / repository / domain
+- Package base: com.example.orderservice
+- Dipendenze: Spring Web, Spring Data JPA, PostgreSQL, Lombok, Validation, MapStruct
+- Includi il pom.xml completo e la struttura delle cartelle
+
+Prompt 2 — Configurazione
+Crea il file application.yml per order-service con:
+- Profili: local, dev, prod
+- DataSource PostgreSQL con HikariCP tuned (pool size, timeout)
+- Flyway per le migrazioni DB
+- Actuator con endpoint health e info esposti
+- Logging strutturato in JSON (logback-spring.xml) per il profilo prod
+
+FASE 2 — Domain Model & Persistenza
+
+Prompt 3 — Entità JPA
+Crea le entità JPA per un sistema di gestione ordini:
+- Order (id, customerId, status enum, createdAt, updatedAt, List<OrderItem>)
+- OrderItem (id, productId, quantity, unitPrice)
+- Usa @Auditing di Spring Data per createdAt/updatedAt
+- Aggiungi indici rilevanti sulle colonne più usate in query
+- Usa Optimistic Locking con @Version
+
+Prompt 4 — Migrazioni Flyway
+Crea i file di migrazione Flyway V1 e V2 per le entità Order e OrderItem
+definite in precedenza. Includi: creazione tabelle, constraint, indici,
+e uno script V2 che inserisce dati di seed per i test locali.
+
+Prompt 5 — Repository
+Crea i repository Spring Data JPA per Order e OrderItem con:
+- Query custom con @Query per: trova ordini per customerId,
+  trova ordini per status negli ultimi N giorni
+- Usa Specification per filtri dinamici (customerId, status, dateRange)
+- Aggiungi un metodo con proiezione (interface-based) per una lista leggera
+
+FASE 3 — Business Logic & API
+
+Prompt 6 — DTO e MapStruct
+Crea i DTO (Request/Response) e i mapper MapStruct per Order e OrderItem:
+- CreateOrderRequest, UpdateOrderRequest, OrderResponse, OrderSummaryResponse
+- Il mapper deve gestire la conversione bidirezionale
+- Aggiungi validazioni Bean Validation sui campi dei Request DTO
+
+Prompt 7 — Service Layer
+Crea OrderService con la logica di business per:
+- createOrder: valida stock (stub), calcola totale, persiste, pubblica evento
+- updateOrderStatus: macchina a stati (PENDING → CONFIRMED → SHIPPED → DELIVERED,
+  con transizioni illegali che lanciano eccezioni custom)
+- cancelOrder: solo se PENDING o CONFIRMED
+- getOrders: paginato, con filtri dinamici tramite Specification
+Usa @Transactional in modo granulare e corretto.
+
+Prompt 8 — Controller REST
+Crea OrderController REST con:
+- POST /orders, GET /orders (paginato + filtri), GET /orders/{id},
+  PATCH /orders/{id}/status, DELETE /orders/{id}
+- Risposte con ResponseEntity e HTTP status corretti
+- Documentazione OpenAPI/Swagger con @Operation e @ApiResponse
+- Versioning dell'API tramite path (/api/v1/...)
+
+FASE 4 — Cross-cutting Concerns
+
+Prompt 9 — Gestione errori
+Crea un sistema centralizzato di error handling per order-service:
+- @RestControllerAdvice con handler per: ConstraintViolationException,
+  EntityNotFoundException, IllegalStateException (transizioni di stato illegali),
+  eccezioni custom di dominio
+- Struttura di errore standard: { timestamp, status, error, message, path, traceId }
+- Propaga il traceId da MDC per la correlazione dei log
+
+Prompt 10 — Sicurezza
+Aggiungi Spring Security a order-service con:
+- JWT Bearer token authentication (validazione solo, non emissione)
+- Estrai customerId dal JWT claim e rendilo disponibile nel SecurityContext
+- Autorizzazione: un customer può vedere solo i propri ordini,
+  un ADMIN può vedere tutto
+- Configura SecurityFilterChain con le regole corrette per i nostri endpoint
+
+FASE 5 — Testing
+
+Prompt 11 — Unit test
+Scrivi i unit test per OrderService usando JUnit 5 e Mockito:
+- Testa ogni metodo pubblico, inclusi i casi di errore
+- Testa la macchina a stati: tutte le transizioni valide e quelle illegali
+- Usa @ExtendWith(MockitoExtension.class) e mock dei repository
+- Raggiungi una copertura significativa dei branch
+
+Prompt 12 — Integration test
+Scrivi integration test per OrderController usando:
+- @SpringBootTest + MockMvc oppure WebTestClient
+- Testcontainers con PostgreSQL reale
+- Testa il flusso completo: crea ordine → aggiorna stato → cancella
+- Testa i casi di errore (404, 400, transizione illegale)
+- Usa @Sql per setup e teardown dei dati
+
+FASE 6 — Osservabilità & Deploy
+
+Prompt 13 — Micrometer & Tracing
+Aggiungi osservabilità a order-service con:
+- Micrometer + Prometheus: metriche custom su ordini creati,
+  tempi di processing, ordini per stato
+- Spring Boot Actuator con /metrics, /health con dettaglio dei componenti
+- Micrometer Tracing con Zipkin per distributed tracing
+- Aggiungi @Observed sulle operazioni chiave del service
+
+Prompt 14 — Dockerfile & Docker Compose
+Crea Dockerfile multi-stage ottimizzato per order-service con Java 21
+(usa eclipse-temurin) e un docker-compose.yml per l'ambiente locale con:
+- order-service, PostgreSQL, Zipkin
+- Health check sui container
+- Variabili d'ambiente per il profilo local
+- Network dedicata e volumi per la persistenza del DB
