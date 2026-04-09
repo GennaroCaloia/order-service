@@ -11,11 +11,14 @@ import com.example.orderservice.dto.response.OrderSummaryResponse;
 import com.example.orderservice.exception.OrderNotFoundException;
 import com.example.orderservice.exception.OrderNotCancellableException;
 import com.example.orderservice.mapper.OrderMapper;
+import com.example.orderservice.metrics.OrderMetrics;
 import com.example.orderservice.repository.OrderRepository;
 import com.example.orderservice.repository.specification.OrderFilter;
 import com.example.orderservice.repository.specification.OrderSpecifications;
 import com.example.orderservice.service.OrderService;
 import com.example.orderservice.service.OrderStateMachine;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -37,39 +40,46 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository    orderRepository;
     private final OrderMapper        orderMapper;
     private final OrderStateMachine  stateMachine;
+    private final OrderMetrics orderMetrics;
 
-    // ── createOrder ───────────────────────────────────────────
-
+    // ── createOrder ── aggiornato ─────────────────────────────────
     @Override
     @Transactional
+    @Observed(
+            name       = "order.create",
+            contextualName = "createOrder",
+            lowCardinalityKeyValues = {"operation", "create"}
+    )
     public OrderResponse createOrder(CreateOrderRequest request) {
         log.info("Creazione ordine per customerId={}", request.customerId());
 
-        // 1. Costruisci l'entità Order base dal mapper
-        Order order = orderMapper.toEntity(request);
-        order.setStatus(OrderStatus.PENDING);
+        Timer.Sample timer = orderMetrics.startTimer();
+        try {
+            Order order = orderMapper.toEntity(request);
+            order.setStatus(OrderStatus.PENDING);
 
-        // 2. Converti e aggiungi ogni item tramite il helper
-        //    bidirezionale — garantisce che item.order sia settato
-        List<OrderItem> items = orderMapper.toItemEntityList(request.items());
-        items.forEach(order::addItem);
+            List<OrderItem> items = orderMapper.toItemEntityList(request.items());
+            items.forEach(order::addItem);
 
-        // 3. Calcola il totale sommando i subtotali degli item.
-        //    Il subtotale di ogni item è calcolato da @PrePersist,
-        //    quindi va calcolato qui manualmente prima del flush.
-        BigDecimal total = request.items().stream()
-                .map(i -> i.unitPrice()
-                        .multiply(BigDecimal.valueOf(i.quantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        order.setTotalAmount(total);
+            BigDecimal total = request.items().stream()
+                    .map(i -> i.unitPrice()
+                            .multiply(BigDecimal.valueOf(i.quantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            order.setTotalAmount(total);
 
-        // 4. Persisti — il cascade ALL su items propaga il save
-        Order saved = orderRepository.save(order);
+            Order saved = orderRepository.save(order);
 
-        log.info("Ordine creato id={} customerId={} total={}",
-                saved.getId(), saved.getCustomerId(), saved.getTotalAmount());
+            // ── Metriche ──────────────────────────────────────────
+            orderMetrics.incrementOrdersCreated();
 
-        return orderMapper.toResponse(saved);
+            log.info("Ordine creato id={} customerId={} total={}",
+                    saved.getId(), saved.getCustomerId(), saved.getTotalAmount());
+
+            return orderMapper.toResponse(saved);
+
+        } finally {
+            orderMetrics.stopTimer(timer);
+        }
     }
 
     // ── getOrderById ──────────────────────────────────────────────
@@ -116,49 +126,54 @@ public class OrderServiceImpl implements OrderService {
                 .map(orderMapper::toSummaryResponse);
     }
 
-    // ── updateOrderStatus ─────────────────────────────────────
-
+    // ── updateOrderStatus ── aggiornato ───────────────────────────
     @Override
     @Transactional
+    @Observed(
+            name       = "order.status.update",
+            contextualName = "updateOrderStatus",
+            lowCardinalityKeyValues = {"operation", "status_update"}
+    )
     public OrderResponse updateOrderStatus(UUID orderId,
                                            UpdateOrderStatusRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
-        // Delega la validazione alla state machine
         stateMachine.validateTransition(order.getStatus(), request.status());
 
         OrderStatus previous = order.getStatus();
         order.setStatus(request.status());
 
+        // ── Metriche ──────────────────────────────────────────────
+        orderMetrics.recordStatusTransition(previous, request.status());
+
         log.info("Ordine {} transizione {} → {} reason={}",
                 orderId, previous, request.status(), request.reason());
 
-        // @LastModifiedDate aggiornerà updatedAt automaticamente al flush
         Order updated = orderRepository.save(order);
-
         return orderMapper.toResponse(updated);
     }
 
-    // ── cancelOrder ───────────────────────────────────────────
-
+    // ── cancelOrder ── aggiornato ─────────────────────────────────
     @Override
     @Transactional
     public void cancelOrder(UUID orderId, String reason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
-        // Solo PENDING e CONFIRMED sono cancellabili.
-        // Usiamo canTransition invece di validateTransition
-        // per poter lanciare un'eccezione più specifica.
         if (!stateMachine.canTransition(order.getStatus(), OrderStatus.CANCELLED)) {
             throw new OrderNotCancellableException(orderId, order.getStatus());
         }
 
+        OrderStatus previous = order.getStatus();
         order.setStatus(OrderStatus.CANCELLED);
 
+        // ── Metriche ──────────────────────────────────────────────
+        orderMetrics.recordStatusTransition(previous, OrderStatus.CANCELLED);
+        orderMetrics.incrementOrdersCancelled(previous);
+
         log.info("Ordine {} cancellato — stato precedente={} reason={}",
-                orderId, order.getStatus(), reason);
+                orderId, previous, reason);
 
         orderRepository.save(order);
     }

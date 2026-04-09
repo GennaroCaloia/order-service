@@ -24,6 +24,25 @@ spring:
 
 # Actuator
 management:
+  tracing:
+    sampling:
+      probability: 1.0    # 100% in dev/local — ridurre a 0.1 in prod
+    zipkin:
+      tracing:
+        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  metrics:
+    tags:
+      # Tag comune a tutte le metriche — utile per filtrare in Grafana
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active:local}
+    distribution:
+      # Abilita istogrammi per calcolare percentili lato server
+      percentiles-histogram:
+        http.server.requests: true
+        order.processing.time: true
+      percentiles:
+        http.server.requests: [ 0.5, 0.90, 0.95, 0.99 ]
+        order.processing.time: [ 0.5, 0.90, 0.95, 0.99 ]
   endpoints:
     web:
       exposure:

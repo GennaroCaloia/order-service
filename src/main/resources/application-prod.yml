@@ -35,6 +35,9 @@ logging:
     org.hibernate.SQL: OFF
 
 management:
+  tracing:
+    sampling:
+      probability: 0.1    # 10% sampling in produzione
   endpoint:
     health:
       show-details: when-authorized
