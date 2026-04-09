@@ -1,5 +1,6 @@
 package com.example.orderservice.service.impl;
 
+import com.example.orderservice.config.security.SecurityUtils;
 import com.example.orderservice.domain.entity.Order;
 import com.example.orderservice.domain.entity.OrderItem;
 import com.example.orderservice.domain.enums.OrderStatus;
@@ -20,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,29 +72,44 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(saved);
     }
 
-    // ── getOrderById ──────────────────────────────────────────
-
+    // ── getOrderById ──────────────────────────────────────────────
+    // Un CUSTOMER può vedere solo i propri ordini.
+    // Un ADMIN può vedere qualsiasi ordine.
     @Override
     @Transactional(readOnly = true)
+    @PreAuthorize("""
+        hasRole('ADMIN') or
+        @orderSecurityService.isOwner(#orderId, authentication)
+        """)
     public OrderResponse getOrderById(UUID orderId) {
-        // JOIN FETCH per evitare N+1 sugli item
         Order order = orderRepository.findByIdWithItems(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
-
         return orderMapper.toResponse(order);
     }
 
-    // ── getOrders ─────────────────────────────────────────────
-
+    // ── getOrders ─────────────────────────────────────────────────
+    // Un CUSTOMER vede solo i propri ordini:
+    // se customerId non è passato, viene forzato al suo.
     @Override
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getOrders(OrderFilter filter,
                                                 Pageable pageable) {
+        UUID effectiveCustomerId = SecurityUtils.isAdmin()
+                ? filter.customerId()                   // ADMIN: filtro libero
+                : SecurityUtils.currentCustomerId();    // CUSTOMER: forzato al suo
+
+        OrderFilter effectiveFilter = OrderFilter.builder()
+                .customerId(effectiveCustomerId)
+                .status(filter.status())
+                .from(filter.from())
+                .to(filter.to())
+                .build();
+
         Specification<Order> spec = OrderSpecifications.buildFilter(
-                filter.customerId(),
-                filter.status(),
-                filter.from(),
-                filter.to());
+                effectiveFilter.customerId(),
+                effectiveFilter.status(),
+                effectiveFilter.from(),
+                effectiveFilter.to());
 
         return orderRepository
                 .findAll(spec, pageable)

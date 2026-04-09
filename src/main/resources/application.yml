@@ -45,6 +45,14 @@ info:
   app:
     name: ${spring.application.name}
     version: @project.version@
+    security:
+      jwt:
+        # Chiave in Base64 — in prod iniettata da vault/secret manager
+        secret: ${JWT_SECRET:dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciBvcmRlciBzZXJ2aWNl}
+        # Nome del claim che contiene il customerId
+        customer-id-claim: sub
+        # Nome del claim che contiene i ruoli
+        roles-claim: roles
 
 # OpenAPI
 springdoc:
