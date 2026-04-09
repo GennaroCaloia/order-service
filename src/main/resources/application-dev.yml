@@ -16,6 +16,11 @@ spring:
     hibernate:
       ddl-auto: validate
 
+  flyway:
+    locations:
+      - classpath:db/migration/versioned
+      - classpath:db/migration/seed
+
 logging:
   level:
     com.example.orderservice: DEBUG

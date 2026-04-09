@@ -26,6 +26,7 @@ spring:
   flyway:
     out-of-order: false
     validate-on-migrate: true
+    locations: classpath:db/migration/versioned
 
 logging:
   level:
