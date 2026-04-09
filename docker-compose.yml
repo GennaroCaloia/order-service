@@ -1,0 +1,126 @@
+# ─────────────────────────────────────────────────────────────
+# Stack locale: order-service + PostgreSQL + Zipkin
+# Avvio: docker compose up -d
+# Stop:  docker compose down -v  (rimuove anche i volumi)
+# ─────────────────────────────────────────────────────────────
+name: order-service-local
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: order-postgres
+    environment:
+      POSTGRES_DB:       orderdb
+      POSTGRES_USER:     orderuser
+      POSTGRES_PASSWORD: orderpass
+      # Ottimizzazioni per dev locale — non usare in prod
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Script di inizializzazione eseguiti al primo avvio
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderuser -d orderdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - order-network
+    restart: unless-stopped
+
+  # ── Zipkin ─────────────────────────────────────────────────
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: order-zipkin
+    ports:
+      - "9411:9411"
+    environment:
+      # In-memory storage — i trace si perdono al riavvio.
+      # Per persistenza usa STORAGE_TYPE=elasticsearch
+      STORAGE_TYPE: mem
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL",
+             "wget -qO- http://localhost:9411/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - order-network
+    restart: unless-stopped
+
+  # ── order-service ──────────────────────────────────────────
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Target esplicito — permette di buildare solo lo stage builder
+      # con: docker build --target builder .
+      target: runtime
+    container_name: order-service
+    image: order-service:local
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+
+      # DataSource
+      DB_URL:      jdbc:postgresql://postgres:5432/orderdb
+      DB_USER:     orderuser
+      DB_PASSWORD: orderpass
+
+      # Tracing
+      ZIPKIN_URL: http://zipkin:9411/api/v2/spans
+
+      # JWT — in dev usiamo la chiave di default dal application.yml
+      # In prod iniettare da un secret manager
+      JWT_SECRET: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciBvcmRlciBzZXJ2aWNl
+
+      # JVM override per l'ambiente locale
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -XX:+ExitOnOutOfMemoryError
+        -Djava.security.egd=file:/dev/./urandom
+        -Dspring.profiles.active=local
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL",
+             "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - order-network
+    restart: unless-stopped
+    # Limiti di risorse per simulare un ambiente realistico
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+
+# ── Volumi ────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: order-service-postgres-data
+
+# ── Network ───────────────────────────────────────────────────
+networks:
+  order-network:
+    name: order-service-network
+    driver: bridge

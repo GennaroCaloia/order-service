@@ -1,0 +1,24 @@
+# Build artifacts
+target/
+*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test e coverage
+**/test-classes/
+**/surefire-reports/
+
+# Documentazione locale
+*.md
+docs/
